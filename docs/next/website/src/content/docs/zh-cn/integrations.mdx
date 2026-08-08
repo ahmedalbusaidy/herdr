@@ -57,7 +57,7 @@ Herdr 以两种不同方式使用集成:
 
 | 集成类型 | 智能体 | 效果 |
 | --- | --- | --- |
-| 生命周期权威 | Pi、OMP、Kimi Code CLI、OpenCode、Kilo Code CLI、MastraCode | 已安装且在为该窗格主动上报时,由钩子或插件事件决定 `idle`、`working` 和 `blocked`。对同一个生命周期权威,Herdr 不再使用屏幕清单兜底。 |
+| 生命周期权威 | Pi、OMP、Kimi Code CLI、OpenCode、Kilo Code CLI、MastraCode、Reasonix | 已安装且在为该窗格主动上报时,由钩子或插件事件决定 `idle`、`working` 和 `blocked`。对同一个生命周期权威,Herdr 不再使用屏幕清单兜底。 |
 | 会话身份 | Claude Code、Codex、GitHub Copilot CLI、Devin CLI、Droid、Qoder CLI、Cursor Agent CLI、Hermes Agent、Antigravity CLI、Grok CLI | 集成上报用于恢复的原生会话引用。状态仍来自 Herdr 的屏幕清单检测。 |
 
 自定义集成在定义了原生终端 UI 中不可见的状态时,也可以上报状态。它们不需要内置到 Herdr 中,也不要求 Herdr 识别智能体的可执行文件。
@@ -314,6 +314,20 @@ herdr integration install grok
 Herdr 默认使用 `~/.grok`,设置了 `GROK_HOME` 时使用后者。Grok 配置目录必须已经存在。Grok 会合并该目录中的所有 `hooks/*.json` 文件,因此安装会写入独立的 `hooks/herdr.json`,其中包含 Herdr 的 `SessionStart` 条目,并同时写入 `hooks/herdr-agent-state.sh`（Windows 上为 `hooks/herdr-agent-state.ps1`）;它不会修改其他钩子文件。卸载只会删除这两个由 Herdr 管理的文件。
 
 Grok 发出会话启动事件后,Herdr 可以用上报的会话 id 通过 `grok --resume <id>` 恢复窗格。
+
+## Reasonix
+
+安装 Reasonix 钩子：
+
+```bash
+herdr integration install reasonix
+```
+
+当 Reasonix 在 Herdr 窗格中运行时，该钩子会向 Herdr 报告会话身份以及生命周期状态（working、idle、blocked）。Herdr 默认使用 `~/.reasonix`，若设置了 `REASONIX_HOME` 则使用该目录。安装会写入 `hooks/herdr-agent-state.sh` 并在 `settings.json` 中注册生命周期钩子条目。卸载会删除 Herdr 拥有的钩子文件及相应条目。
+
+Reasonix 发出会话启动事件后，Herdr 可以用上报的会话 id 通过 `reasonix --resume <id>` 恢复窗格。
+
+Reasonix 仅提供 Unix（macOS/Linux）版本。
 
 ## 自定义状态标签
 

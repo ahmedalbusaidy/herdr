@@ -28,6 +28,7 @@ herdr integration install cursor
 herdr integration install mastracode
 herdr integration install antigravity-cli
 herdr integration install grok
+herdr integration install reasonix
 ```
 
 ## Uninstall integrations
@@ -49,6 +50,7 @@ herdr integration uninstall cursor
 herdr integration uninstall mastracode
 herdr integration uninstall antigravity-cli
 herdr integration uninstall grok
+herdr integration uninstall reasonix
 ```
 
 ## How Herdr uses integrations
@@ -57,7 +59,7 @@ Herdr uses integrations in two different ways:
 
 | Integration type | Agents | Effect |
 | --- | --- | --- |
-| Lifecycle authority | Pi, OMP, Kimi Code CLI, OpenCode, Kilo Code CLI, MastraCode | When installed and actively reporting for the pane, hook or plugin events author `idle`, `working`, and `blocked`. Herdr does not also use screen manifest fallback for that same lifecycle authority. |
+| Lifecycle authority | Pi, OMP, Kimi Code CLI, OpenCode, Kilo Code CLI, MastraCode, Reasonix | When installed and actively reporting for the pane, hook or plugin events author `idle`, `working`, and `blocked`. Herdr does not also use screen manifest fallback for that same lifecycle authority. |
 | Session identity | Claude Code, Codex, GitHub Copilot CLI, Devin CLI, Droid, Qoder CLI, Cursor Agent CLI, Hermes Agent, Antigravity CLI, Grok CLI | The integration reports native session references for restore. State still comes from Herdr's screen manifest detection. |
 
 Custom integrations can also report state when they define state that is not visible in the native terminal UI. They do not need to be built into Herdr or use a recognized agent executable.
@@ -314,6 +316,22 @@ The hook reports session identity through Grok's `SessionStart` hook while Grok 
 Herdr uses `~/.grok` by default, or `GROK_HOME` when set. The Grok config directory must already exist. Grok merges every `hooks/*.json` file in that directory, so install writes a self-contained `hooks/herdr.json` with the Herdr `SessionStart` entry next to `hooks/herdr-agent-state.sh` (`hooks/herdr-agent-state.ps1` on Windows), and never edits other hook files. Uninstall removes exactly those two Herdr-owned files.
 
 After Grok emits a session start event, Herdr can use the reported session id to resume the pane with `grok --resume <id>`.
+
+## Reasonix
+
+Install the Reasonix hook:
+
+```bash
+herdr integration install reasonix
+```
+
+The hook reports session identity as well as full lifecycle state (working, idle, blocked) to Herdr while Reasonix runs inside a Herdr pane. Reasonix is a full lifecycle authority: its hook authors the visible idle/working/blocked state directly.
+
+Herdr uses `~/.reasonix` by default, or `REASONIX_HOME` when set. The Reasonix config directory must already exist. Install writes `hooks/herdr-agent-state.sh` under the Reasonix config directory and registers the lifecycle hook entries in `settings.json`, preserving any entries you have written yourself. Uninstall removes exactly the Herdr-owned hook file and its `settings.json` entries.
+
+After Reasonix emits a session start event, Herdr can use the reported session id to resume the pane with `reasonix --resume <id>`. The installed hook is managed by Herdr and is rewritten on reinstall, so add your own hooks as separate `settings.json` entries instead of editing it. You can confirm what Reasonix has loaded with `reasonix hook list --json` or the in-session `/hooks` command.
+
+Reasonix ships a Unix (macOS/Linux) binary only and has no Windows build, so this integration provides the POSIX `herdr-agent-state.sh` hook and no `.ps1` counterpart.
 
 ## Custom status labels
 
