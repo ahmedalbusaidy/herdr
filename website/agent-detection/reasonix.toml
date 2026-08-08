@@ -1,0 +1,71 @@
+id = "reasonix"
+version = "2026.08.08.1"
+min_engine_version = 1
+updated_at = "2026-08-08T00:00:00Z"
+aliases = ["deepseek-reasonix"]
+
+# Reasonix runs a full-screen TUI that repaints every frame, so the visible
+# chrome is the only state evidence: the OSC title is the static string
+# "reasonix" and carries no state.
+#
+# Two facts drive the rule ordering below, both captured from live panes with
+# `herdr agent read <pane> --source detection --format text`:
+#
+#   1. Waiting for a human does not stop the turn spinner. A pane held on an
+#      approval panel or a question card still renders `⣟  thinking… (19s ·
+#      Esc cancels)` underneath, so both blocked rules have to outrank working.
+#   2. Panel bodies are localized (en/zh/zh-Hant) and their height varies with
+#      the wrapped tool arguments, but each one ends in a keyboard hint whose
+#      distinctive glyphs survive translation. Matching the hint instead of the
+#      localized title keeps one rule correct in every locale and avoids
+#      guessing how tall the panel is.
+
+[[rules]]
+id = "approval_panel"
+state = "blocked"
+priority = 900
+region = "bottom_non_empty_lines(16)"
+visible_blocker = true
+# Rendered for both `⏸ Permission required` and `⏸ Plan ready above` — they are
+# the same panel widget. The literal is not translated, and the skill picker's
+# similar hint uses "↑↓ navigate" (no slash) plus a different tail, so the
+# full string does not collide with it.
+contains = ["↑/↓ navigate · Enter select · y/a/p/n shortcuts"]
+
+[[rules]]
+id = "question_card"
+state = "blocked"
+priority = 890
+region = "bottom_non_empty_lines(16)"
+visible_blocker = true
+# The question card asks the user to choose between numbered options and, like
+# the approval panel, leaves the turn spinner running underneath. Its hint line
+# is localized and wraps on narrow panes, so match the "←/→" glyph pair: it is
+# the only place Reasonix renders it, and it survives translation and wrapping.
+contains = ["←/→"]
+
+[[rules]]
+id = "turn_spinner"
+state = "working"
+priority = 500
+region = "bottom_non_empty_lines(16)"
+visible_working = true
+# Braille frames are the bubbles "Dot" set. The trailing cancel hint is
+# localized, and the line can carry a scroll suffix (" · ↓179"), so the regex
+# matches the parenthetical rather than the end of the line. Covers thinking
+# and retrying, which share the "Esc cancels" hint.
+line_regex = ['^\s*[⣾⣽⣻⢿⡿⣟⣯⣷]\s+\S.*\([^)]*(?:Esc cancels|Esc 取消)[^)]*\)']
+
+[[rules]]
+id = "tool_spinner"
+state = "working"
+priority = 490
+region = "bottom_non_empty_lines(16)"
+visible_working = true
+# A running tool renders its own spinner under a `⎿` connector, using a
+# different braille set from the turn spinner above.
+line_regex = ['[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+(?:working|运行中|執行中)\s+·']
+
+# Idle is intentionally rule-free: it is the known-agent fallback. The idle
+# status line reads "· ready ·", but that same line stays on screen while a
+# turn runs, so it is not a usable idle discriminator.

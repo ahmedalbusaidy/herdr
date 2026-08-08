@@ -1006,6 +1006,17 @@
           ]
         },
         {
+          "key": "ui.sound.agents.reasonix",
+          "type": "enum",
+          "default": "\"default\"",
+          "description": "Sound override for detected Reasonix agents.",
+          "values": [
+            "default",
+            "on",
+            "off"
+          ]
+        },
+        {
           "key": "ui.sound.agents.hermes",
           "type": "enum",
           "default": "\"default\"",

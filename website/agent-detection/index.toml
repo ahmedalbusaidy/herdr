@@ -73,5 +73,9 @@ id = "qodercli"
 path = "qodercli.toml"
 
 [[agents]]
+id = "reasonix"
+path = "reasonix.toml"
+
+[[agents]]
 id = "copilot"
 path = "github-copilot.toml"
