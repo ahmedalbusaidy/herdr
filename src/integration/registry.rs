@@ -24,6 +24,7 @@ pub(crate) fn integration_target_label(
         crate::api::schema::IntegrationTarget::Mastracode => "mastracode",
         crate::api::schema::IntegrationTarget::AntigravityCli => "antigravity-cli",
         crate::api::schema::IntegrationTarget::Grok => "grok",
+        crate::api::schema::IntegrationTarget::Reasonix => "reasonix",
     }
 }
 
@@ -53,6 +54,7 @@ pub(crate) fn integration_target_command_names(
         crate::api::schema::IntegrationTarget::Mastracode => &["mastracode"],
         crate::api::schema::IntegrationTarget::AntigravityCli => &["agy"],
         crate::api::schema::IntegrationTarget::Grok => &["grok"],
+        crate::api::schema::IntegrationTarget::Reasonix => &["reasonix"],
     }
 }
 
@@ -264,7 +266,7 @@ fn integration_specs() -> [(
     crate::api::schema::IntegrationTarget,
     io::Result<PathBuf>,
     u32,
-); 16] {
+); 17] {
     [
         (
             crate::api::schema::IntegrationTarget::Pi,
@@ -352,6 +354,11 @@ fn integration_specs() -> [(
             grok_dir().map(|dir| dir.join("hooks").join(super::GROK_HOOK_INSTALL_NAME)),
             super::GROK_INTEGRATION_VERSION,
         ),
+        (
+            crate::api::schema::IntegrationTarget::Reasonix,
+            reasonix_dir().map(|dir| dir.join("hooks").join(super::REASONIX_HOOK_INSTALL_NAME)),
+            super::REASONIX_INTEGRATION_VERSION,
+        ),
     ]
 }
 
@@ -405,6 +412,40 @@ fn grok_hook_config_is_valid(hook_path: &Path) -> bool {
         .is_some_and(|config| config == super::targets::grok_hook_config(hook_path))
 }
 
+fn reasonix_settings_is_valid(hook_path: &Path) -> bool {
+    let Some(dir) = hook_path.parent().and_then(|hooks_dir| hooks_dir.parent()) else {
+        return false;
+    };
+    let settings_path = dir.join("settings.json");
+    let Some(settings) = fs::read_to_string(settings_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+    else {
+        return false;
+    };
+    let Some(hooks) = settings.get("hooks").and_then(serde_json::Value::as_object) else {
+        return false;
+    };
+    for (event, action) in super::REASONIX_HOOK_EVENTS {
+        let expected = super::command::hook_command(hook_path, Some(action));
+        // Reasonix stores direct HookConfig objects ({"command": ...}); check
+        // the flat command field, not the nested Claude-style hooks/type shape.
+        let present = hooks
+            .get(event)
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|entries| {
+                entries.iter().any(|entry| {
+                    entry.get("command").and_then(serde_json::Value::as_str)
+                        == Some(expected.as_str())
+                })
+            });
+        if !present {
+            return false;
+        }
+    }
+    true
+}
+
 pub(crate) fn integration_status_at(
     target: crate::api::schema::IntegrationTarget,
     path: PathBuf,
@@ -429,15 +470,21 @@ pub(crate) fn integration_status_at(
         super::IntegrationStatusKind::Outdated
     };
 
-    // Grok only invokes the hook when the herdr-owned `hooks/herdr.json`
-    // registers it, so a current hook script with a missing or broken config
-    // is a nonfunctional install: report it as outdated so `herdr integration
-    // status` flags it and a reinstall rewrites both files.
-    if target == crate::api::schema::IntegrationTarget::Grok
-        && state == super::IntegrationStatusKind::Current
-        && !grok_hook_config_is_valid(&path)
-    {
-        state = super::IntegrationStatusKind::Outdated;
+    // Some agents only invoke the hook when a separate config file registers
+    // it, so a current hook script alone is not a working install. Report those
+    // as outdated instead, so `herdr integration status` flags them and a
+    // reinstall rewrites every file the target owns.
+    if state == super::IntegrationStatusKind::Current {
+        let config_valid = match target {
+            // Grok reads the herdr-owned `hooks/herdr.json`.
+            crate::api::schema::IntegrationTarget::Grok => grok_hook_config_is_valid(&path),
+            // Reasonix reads hook entries out of its own `settings.json`.
+            crate::api::schema::IntegrationTarget::Reasonix => reasonix_settings_is_valid(&path),
+            _ => true,
+        };
+        if !config_valid {
+            state = super::IntegrationStatusKind::Outdated;
+        }
     }
 
     super::IntegrationStatus {

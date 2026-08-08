@@ -16,11 +16,12 @@ use super::config_edit::{
     ensure_hooks_object, ensure_simple_command_hook, hooks_object_if_present,
     remove_direct_hook_commands, remove_flat_command_hook, remove_hermes_plugin_enabled,
     remove_hook_commands, remove_kimi_config_block, remove_simple_command_hook,
+    remove_simple_hook_commands,
 };
 use super::env::{
     antigravity_cli_dir, claude_dir, codex_dir, copilot_dir, cursor_dir, devin_dir, droid_dir,
     grok_dir, hermes_dir, hermes_plugin_dir, kilo_dir, kimi_dir, mastracode_dir, omp_extension_dir,
-    opencode_dir, pi_extension_dir, qodercli_dir,
+    opencode_dir, pi_extension_dir, qodercli_dir, reasonix_dir,
 };
 use super::file_ops::{
     make_executable, remove_dir_all_if_exists, remove_file_if_exists, remove_legacy_bash_hook_file,
@@ -34,6 +35,7 @@ use super::types::{
     KiloUninstallResult, KimiInstallPaths, KimiUninstallResult, MastracodeInstallPaths,
     MastracodeUninstallResult, OmpInstallPaths, OmpUninstallResult, OpenCodeInstallPaths,
     OpenCodeUninstallResult, PiUninstallResult, QodercliInstallPaths, QodercliUninstallResult,
+    ReasonixInstallPaths, ReasonixUninstallResult,
 };
 use super::{
     ANTIGRAVITY_CLI_HOOK_ASSET, ANTIGRAVITY_CLI_HOOK_BLOCK_NAME, ANTIGRAVITY_CLI_HOOK_EVENTS,
@@ -51,7 +53,8 @@ use super::{
     OMP_EXTENSION_ASSET, OMP_EXTENSION_INSTALL_NAME, OPENCODE_PLUGIN_ASSET,
     OPENCODE_PLUGIN_INSTALL_NAME, PI_EXTENSION_ASSET, PI_EXTENSION_INSTALL_NAME,
     QODERCLI_HOOK_ASSET, QODERCLI_HOOK_EVENTS, QODERCLI_HOOK_INSTALL_NAME,
-    QODERCLI_REMOVED_LIFECYCLE_HOOK_EVENTS,
+    QODERCLI_REMOVED_LIFECYCLE_HOOK_EVENTS, REASONIX_HOOK_ASSET, REASONIX_HOOK_EVENTS,
+    REASONIX_HOOK_INSTALL_NAME,
 };
 
 fn ensure_extension_dir(dir: &Path, agent: &str) -> io::Result<()> {
@@ -1352,5 +1355,109 @@ pub(crate) fn uninstall_grok() -> io::Result<GrokUninstallResult> {
         config_path,
         removed_hook_file,
         removed_config_file,
+    })
+}
+
+pub(crate) fn install_reasonix() -> io::Result<ReasonixInstallPaths> {
+    let dir = reasonix_dir()?;
+    if !dir.is_dir() {
+        return Err(io::Error::other(format!(
+            "reasonix config directory not found at {}. install reasonix first",
+            dir.display()
+        )));
+    }
+
+    let hooks_dir = dir.join("hooks");
+    fs::create_dir_all(&hooks_dir)?;
+
+    let hook_path = hooks_dir.join(REASONIX_HOOK_INSTALL_NAME);
+    fs::write(&hook_path, REASONIX_HOOK_ASSET)?;
+    make_executable(&hook_path)?;
+
+    let settings_path = dir.join("settings.json");
+    let existing = if settings_path.is_file() {
+        fs::read_to_string(&settings_path)?
+    } else {
+        "{}".to_string()
+    };
+    let updated = install_reasonix_settings(&existing, &settings_path, &hook_path)?;
+    if updated != existing {
+        fs::write(&settings_path, updated)?;
+    }
+
+    Ok(ReasonixInstallPaths {
+        hook_path,
+        settings_path,
+    })
+}
+
+fn install_reasonix_settings(content: &str, path: &Path, hook_path: &Path) -> io::Result<String> {
+    let mut settings: Value = if content.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(content)
+            .map_err(|err| io::Error::other(format!("failed to parse {}: {err}", path.display())))?
+    };
+
+    let hooks = ensure_hooks_object(
+        &mut settings,
+        path,
+        "reasonix settings file",
+        "reasonix settings hooks",
+    )?;
+
+    for (event, action) in REASONIX_HOOK_EVENTS {
+        // Reasonix unmarshals each event entry directly as a HookConfig
+        // (command/match/timeout), so write the flat {"command": ...} shape —
+        // the same one Cursor uses. Remove any prior herdr-registered entry
+        // first so a reinstall is idempotent.
+        let command = hook_command(hook_path, Some(action));
+        remove_simple_hook_commands(hooks, event, hook_path, Some(action))?;
+        ensure_simple_command_hook(hooks, event, command)?;
+    }
+
+    Ok(serde_json::to_string_pretty(&settings)?)
+}
+
+pub(crate) fn uninstall_reasonix() -> io::Result<ReasonixUninstallResult> {
+    let dir = reasonix_dir()?;
+    let hooks_dir = dir.join("hooks");
+    let hook_path = hooks_dir.join(REASONIX_HOOK_INSTALL_NAME);
+    let removed_hook_file = remove_file_if_exists(&hook_path)?;
+
+    let settings_path = dir.join("settings.json");
+    let updated_settings = if settings_path.is_file() {
+        let existing = fs::read_to_string(&settings_path)?;
+        let mut settings: Value = serde_json::from_str(&existing).map_err(|err| {
+            io::Error::other(format!(
+                "failed to parse {}: {err}",
+                settings_path.display()
+            ))
+        })?;
+        let mut changed = false;
+        if let Some(hooks) = hooks_object_if_present(
+            &mut settings,
+            &settings_path,
+            "reasonix settings file",
+            "reasonix settings hooks",
+        )? {
+            for (event, action) in REASONIX_HOOK_EVENTS {
+                changed |= remove_simple_hook_commands(hooks, event, &hook_path, Some(action))?;
+            }
+        }
+        if changed {
+            let updated = serde_json::to_string_pretty(&settings)?;
+            fs::write(&settings_path, updated)?;
+        }
+        changed
+    } else {
+        false
+    };
+
+    Ok(ReasonixUninstallResult {
+        hook_path,
+        settings_path,
+        removed_hook_file,
+        updated_settings,
     })
 }

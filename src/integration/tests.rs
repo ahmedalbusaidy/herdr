@@ -105,6 +105,7 @@ fn clear_integration_path_env() {
     std::env::remove_var(ANTIGRAVITY_CLI_CONFIG_DIR_ENV_VAR);
     std::env::remove_var(GROK_CONFIG_DIR_ENV_VAR);
     std::env::remove_var(GROK_HOME_ENV_VAR);
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
 }
 
 fn kimi_hook_command(hook_path: &Path, action: &str) -> String {
@@ -2706,6 +2707,17 @@ fn bundled_integration_assets_report_session_refs() {
     assert!(KIMI_HOOK_ASSET.contains("method = \"pane.report_agent\""));
     assert!(KIMI_HOOK_ASSET.contains("params[\"state\"] = action"));
     assert!(!KIMI_HOOK_ASSET.contains("pane.release_agent"));
+    assert!(REASONIX_HOOK_ASSET.contains("source\": \"herdr:reasonix"));
+    assert!(REASONIX_HOOK_ASSET.contains("agent_session_id"));
+    assert!(REASONIX_HOOK_ASSET.contains("method = \"pane.report_agent_session\""));
+    // Reasonix sends its own SessionStart reason ("clear" for /new and /clear),
+    // so the asset forwards the payload value and only defaults to startup.
+    assert!(REASONIX_HOOK_ASSET.contains("start_source = payload.get(\"source\")"));
+    assert!(REASONIX_HOOK_ASSET.contains("start_source = \"startup\""));
+    assert!(REASONIX_HOOK_ASSET.contains("params[\"session_start_source\"] = start_source"));
+    assert!(REASONIX_HOOK_ASSET.contains("method = \"pane.report_agent\""));
+    assert!(REASONIX_HOOK_ASSET.contains("params[\"state\"] = action"));
+    assert!(!REASONIX_HOOK_ASSET.contains("pane.release_agent"));
     assert!(COPILOT_HOOK_ASSET.contains("agent_session_id"));
     assert!(COPILOT_HOOK_ASSET.contains("pane.report_agent_session"));
     assert!(!COPILOT_HOOK_ASSET.contains("\"state\":"));
@@ -3952,5 +3964,252 @@ fn grok_dir_honors_grok_home_after_config_dir_seam() {
 
     std::env::remove_var(GROK_HOME_ENV_VAR);
     clear_integration_path_env();
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn install_reasonix_writes_hook() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    fs::create_dir_all(&reasonix_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    let installed = install_reasonix().unwrap();
+
+    let hooks_dir = reasonix_dir.join("hooks");
+    assert_eq!(
+        installed.hook_path,
+        hooks_dir.join(REASONIX_HOOK_INSTALL_NAME)
+    );
+    assert_eq!(
+        fs::read_to_string(&installed.hook_path).unwrap(),
+        REASONIX_HOOK_ASSET
+    );
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn install_reasonix_is_idempotent() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    fs::create_dir_all(&reasonix_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    install_reasonix().unwrap();
+    let first =
+        fs::read_to_string(reasonix_dir.join("hooks").join(REASONIX_HOOK_INSTALL_NAME)).unwrap();
+    let installed = install_reasonix().unwrap();
+    let second = fs::read_to_string(&installed.hook_path).unwrap();
+    assert_eq!(first, second);
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn install_reasonix_errors_when_config_dir_missing() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    // Do NOT create the directory.
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    let err = install_reasonix().unwrap_err().to_string();
+    assert!(err.contains("reasonix config directory not found"), "{err}");
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn install_reasonix_uses_reasonix_home_env() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let seam_dir = base.join("seam");
+    fs::create_dir_all(&seam_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &seam_dir);
+
+    let installed = install_reasonix().unwrap();
+    assert_eq!(
+        installed.hook_path,
+        seam_dir.join("hooks").join(REASONIX_HOOK_INSTALL_NAME)
+    );
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn uninstall_reasonix_removes_hook_file() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    fs::create_dir_all(&reasonix_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    install_reasonix().unwrap();
+    let hook_path = reasonix_dir.join("hooks").join(REASONIX_HOOK_INSTALL_NAME);
+    assert!(hook_path.exists());
+
+    let result = uninstall_reasonix().unwrap();
+    assert!(result.removed_hook_file);
+    assert!(!hook_path.exists());
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn install_reasonix_writes_settings_json_entries() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    fs::create_dir_all(&reasonix_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    let installed = install_reasonix().unwrap();
+
+    let settings_path = installed.settings_path;
+    assert!(settings_path.is_file());
+    let settings: Value =
+        serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+    let hooks = settings["hooks"].as_object().expect("settings.json hooks");
+    for (event, _) in REASONIX_HOOK_EVENTS {
+        assert!(
+            hooks.contains_key(event),
+            "settings.json missing hook for {event}"
+        );
+        // Reasonix unmarshals each entry directly as a HookConfig, so entries
+        // must be flat {"command": ...} objects — NOT nested hooks/type/style.
+        let entries = hooks[event].as_array().unwrap_or_else(|| {
+            panic!("settings.json {event} must be an array");
+        });
+        let entry = &entries[0];
+        assert!(
+            entry.get("command").and_then(Value::as_str).is_some(),
+            "{event} entry must carry a direct command field, got {entry}"
+        );
+        assert!(
+            entry.get("hooks").is_none(),
+            "{event} entry must not use the nested Claude hooks shape"
+        );
+        assert!(
+            entry.get("type").is_none(),
+            "{event} entry must not carry a type field"
+        );
+    }
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn uninstall_reasonix_removes_settings_entries_and_preserves_foreign() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    fs::create_dir_all(&reasonix_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    // Pre-seed a foreign, non-herdr hook under SessionStart that must survive.
+    fs::write(
+        reasonix_dir.join("settings.json"),
+        serde_json::to_string(&json!({
+            "hooks": {
+                "SessionStart": [{ "command": "echo foreign" }]
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let installed = install_reasonix().unwrap();
+    let result = uninstall_reasonix().unwrap();
+    assert!(result.removed_hook_file);
+    assert!(result.updated_settings);
+
+    let settings: Value =
+        serde_json::from_str(&fs::read_to_string(&installed.settings_path).unwrap()).unwrap();
+    let start = &settings["hooks"]["SessionStart"];
+    let commands = start
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| e.get("command").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    // The foreign echo entry must remain; no herdr bash entry should.
+    assert!(commands.contains(&"echo foreign"));
+    assert!(commands.iter().all(|c| !c.contains("herdr-agent-state.sh")));
+
+    // Every other event held only herdr entries, so uninstall must drop the key
+    // outright rather than leaving an empty array in the user's settings file.
+    let hooks = settings["hooks"].as_object().expect("settings.json hooks");
+    for (event, _) in REASONIX_HOOK_EVENTS {
+        if event == "SessionStart" {
+            continue;
+        }
+        assert!(
+            !hooks.contains_key(event),
+            "uninstall left an empty {event} entry behind: {:?}",
+            hooks.get(event)
+        );
+    }
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn reasonix_integration_status_is_current_after_install() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    fs::create_dir_all(&reasonix_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    // A real install writes both the hook script and settings.json entries.
+    install_reasonix().unwrap();
+
+    let statuses = installed_integration_statuses();
+    let reasonix = statuses
+        .iter()
+        .find(|status| status.target == crate::api::schema::IntegrationTarget::Reasonix)
+        .expect("reasonix integration status");
+    assert_eq!(reasonix.state, IntegrationStatusKind::Current);
+    assert_eq!(
+        reasonix.installed_version,
+        Some(REASONIX_INTEGRATION_VERSION)
+    );
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
+fn reasonix_status_reports_outdated_when_settings_missing() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let reasonix_dir = base.join(".reasonix");
+    fs::create_dir_all(&reasonix_dir).unwrap();
+    std::env::set_var(REASONIX_HOME_ENV_VAR, &reasonix_dir);
+
+    install_reasonix().unwrap();
+    // Break the install by dropping the settings.json registration.
+    fs::remove_file(reasonix_dir.join("settings.json")).unwrap();
+
+    let statuses = installed_integration_statuses();
+    let reasonix = statuses
+        .iter()
+        .find(|status| status.target == crate::api::schema::IntegrationTarget::Reasonix)
+        .expect("reasonix integration status");
+    assert_eq!(reasonix.state, IntegrationStatusKind::Outdated);
+
+    std::env::remove_var(REASONIX_HOME_ENV_VAR);
     let _ = fs::remove_dir_all(base);
 }

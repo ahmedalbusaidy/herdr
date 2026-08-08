@@ -365,6 +365,19 @@ pub(crate) fn remove_direct_hook_commands(
     Ok(removed)
 }
 
+pub(crate) fn remove_simple_hook_commands(
+    hooks: &mut Map<String, Value>,
+    event: &str,
+    hook_path: &Path,
+    action: Option<&str>,
+) -> io::Result<bool> {
+    let mut removed = false;
+    for command in hook_command_variants(hook_path, action) {
+        removed |= remove_simple_command_hook(hooks, event, &command)?;
+    }
+    Ok(removed)
+}
+
 pub(crate) fn hook_command_variants(hook_path: &Path, action: Option<&str>) -> Vec<String> {
     let mut commands = vec![hook_command(hook_path, action)];
     push_unique_command(&mut commands, legacy_bash_hook_command(hook_path, action));

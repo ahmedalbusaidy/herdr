@@ -279,6 +279,20 @@ const GROK_HOOK_ASSET: &str = if cfg!(windows) {
 };
 const GROK_INTEGRATION_VERSION: u32 = 1;
 
+const REASONIX_HOOK_INSTALL_NAME: &str = "herdr-agent-state.sh";
+const REASONIX_HOOK_ASSET: &str = include_str!("assets/reasonix/herdr-agent-state.sh");
+const REASONIX_INTEGRATION_VERSION: u32 = 1;
+const REASONIX_HOOK_EVENTS: [(&str, &str); 6] = [
+    ("SessionStart", "session"),
+    ("UserPromptSubmit", "working"),
+    // PreToolUse is the blocked->working recovery path (fires when the agent
+    // actually runs a tool after a permission grant), mirroring kimi.
+    ("PreToolUse", "working"),
+    ("Stop", "idle"),
+    ("StopFailure", "idle"),
+    ("PermissionRequest", "blocked"),
+];
+
 pub(crate) const INSTALL_WARNING_PREFIX: &str = "warning:";
 
 #[cfg(test)]

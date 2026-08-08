@@ -131,6 +131,7 @@ fn parse_integration_target(
         "mastracode" => IntegrationTarget::Mastracode,
         "antigravity-cli" | "antigravity_cli" => IntegrationTarget::AntigravityCli,
         "grok" => IntegrationTarget::Grok,
+        "reasonix" => IntegrationTarget::Reasonix,
         _ => {
             eprintln!("unknown integration target: {target}");
             eprintln!(
@@ -161,6 +162,7 @@ fn print_integration_help() {
     eprintln!("  herdr integration install mastracode");
     eprintln!("  herdr integration install antigravity-cli");
     eprintln!("  herdr integration install grok");
+    eprintln!("  herdr integration install reasonix");
     eprintln!("  herdr integration uninstall pi");
     eprintln!("  herdr integration uninstall omp");
     eprintln!("  herdr integration uninstall claude");
@@ -177,5 +179,6 @@ fn print_integration_help() {
     eprintln!("  herdr integration uninstall mastracode");
     eprintln!("  herdr integration uninstall antigravity-cli");
     eprintln!("  herdr integration uninstall grok");
+    eprintln!("  herdr integration uninstall reasonix");
     eprintln!("  herdr integration status [--outdated-only]");
 }

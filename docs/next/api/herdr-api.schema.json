@@ -2120,7 +2120,8 @@
             "cursor",
             "mastracode",
             "antigravity_cli",
-            "grok"
+            "grok",
+            "reasonix"
           ],
           "type": "string"
         },
@@ -7175,7 +7176,8 @@
             "cursor",
             "mastracode",
             "antigravity_cli",
-            "grok"
+            "grok",
+            "reasonix"
           ],
           "type": "string"
         },
